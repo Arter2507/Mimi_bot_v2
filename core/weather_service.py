@@ -80,6 +80,12 @@ def get_weather(location: str) -> Optional[Dict]:
         Dict chứa thông tin thời tiết hoặc None nếu lỗi
     """
     if not WEATHER_API_KEY:
+        print("WEATHER_API_KEY not configured")
+        return None
+    
+    # Validate API key format (basic check)
+    if not WEATHER_API_KEY or len(WEATHER_API_KEY) < 20:
+        print("WEATHER_API_KEY appears to be invalid (too short)")
         return None
     
     try:
@@ -111,10 +117,32 @@ def get_weather(location: str) -> Optional[Dict]:
                 "humidity": humidity,
                 "main": weather_main
             }
-        else:
+        elif response.status_code == 401:
+            print(f"Weather API authentication failed for location '{location}' - check API key")
             return None
+        elif response.status_code == 404:
+            print(f"Weather location '{location}' not found")
+            return None
+        elif response.status_code == 429:
+            print(f"Weather API rate limit exceeded for location '{location}'")
+            return None
+        else:
+            print(f"Weather API returned status {response.status_code} for location '{location}'")
+            return None
+    except requests.exceptions.Timeout:
+        print(f"Weather API request timeout for location '{location}'")
+        return None
+    except requests.exceptions.ConnectionError:
+        print(f"Weather API connection error for location '{location}'")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"Weather API request error for location '{location}': {e}")
+        return None
+    except (KeyError, IndexError, TypeError) as e:
+        print(f"Weather API response parsing error for location '{location}': {e}")
+        return None
     except Exception as e:
-        print(f"Lỗi khi lấy thời tiết: {e}")
+        print(f"Unexpected error getting weather for location '{location}': {e}")
         return None
 
 
