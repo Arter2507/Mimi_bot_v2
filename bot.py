@@ -12,6 +12,7 @@ from core.constants import DEFAULT_WISH_TIME, JSON_CONFIG, HOLIDAYS_JSON, BIRTHD
 from core.json_store import load_json
 from core.date_utils import get_solar_date, get_lunar_date, get_days_until_solar, get_days_until_lunar, get_age
 from core.weather_service import get_weather
+from core.ai_wish import generate_wish
 from views.celebrate_view import CelebrateView
 
 from cogs.config_cog import ConfigCog
@@ -64,12 +65,104 @@ class HolidayBot(commands.Bot):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         print("------")
         
+        # Gửi thông báo khởi động vào log channel
+        await self.send_startup_notification()
+        
         # Kiểm tra và gửi thông báo restart thành công nếu có
         await self.check_restart_status()
 
     # ========== Helper Methods ==========
 
-    async def send_wish(self, guild, name, type_info, interaction_ctx=None):
+    async def send_log_message(self, guild, message: str, file_path: str = None):
+        """Gửi thông báo vào log channel được config, có thể kèm file."""
+        config = load_json(JSON_CONFIG).get(str(guild.id))
+        if not config:
+            return
+        
+        log_channel_id = config.get('log_channel_id')
+        if not log_channel_id:
+            return
+        
+        try:
+            channel = guild.get_channel(int(log_channel_id))
+            if channel:
+                if file_path and os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        file = discord.File(f, filename=os.path.basename(file_path))
+                        await channel.send(message, file=file)
+                else:
+                    await channel.send(message)
+        except Exception as e:
+            print(f"Lỗi khi gửi log message (Guild: {guild.id}): {e}")
+
+    def get_restart_count(self):
+        """Lấy số lần restart hiện tại và tăng lên 1."""
+        restart_count_file = "restart_count.json"
+        count = 1
+        
+        if os.path.exists(restart_count_file):
+            try:
+                with open(restart_count_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    count = data.get('count', 1) + 1
+            except:
+                count = 1
+        
+        # Lưu số lần mới
+        try:
+            with open(restart_count_file, 'w', encoding='utf-8') as f:
+                json.dump({'count': count}, f, indent=2)
+        except:
+            pass
+        
+        return count
+
+    async def send_startup_notification(self):
+        """Gửi thông báo khởi động bot vào log channel của tất cả guilds."""
+        restart_count = self.get_restart_count()
+        
+        for guild in self.guilds:
+            try:
+                latency = round(self.latency * 1000)
+                message = (
+                    f"✅ **Bot đã khởi động thành công!**\n"
+                    f"🏓 Latency: {latency}ms\n"
+                    f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+                    f"📊 Lần khởi động thứ: {restart_count}"
+                )
+                
+                # Tạo file restart info nếu có restart_info.json
+                restart_info_file = "restart_info.json"
+                file_to_send = None
+                
+                if os.path.exists(restart_info_file):
+                    # Đọc và tạo file mới với tên có số lần
+                    try:
+                        with open(restart_info_file, 'r', encoding='utf-8') as f:
+                            restart_info = json.load(f)
+                        
+                        # Tạo file mới với tên có số lần
+                        new_filename = f"restart_info_file_{restart_count}.json"
+                        with open(new_filename, 'w', encoding='utf-8') as f:
+                            json.dump(restart_info, f, indent=2, ensure_ascii=False)
+                        
+                        file_to_send = new_filename
+                    except Exception as e:
+                        print(f"Lỗi khi tạo restart info file: {e}")
+                
+                await self.send_log_message(guild, message, file_to_send)
+                
+                # Xóa file tạm sau khi gửi
+                if file_to_send and os.path.exists(file_to_send):
+                    try:
+                        os.remove(file_to_send)
+                    except:
+                        pass
+                        
+            except Exception as e:
+                print(f"Lỗi khi gửi startup notification (Guild: {guild.id}): {e}")
+
+    async def send_wish(self, guild, name, type_info, interaction_ctx=None, user_id=None):
         """Send a wish message to the configured channel."""
         config = load_json(JSON_CONFIG).get(str(guild.id))
         if not config:
@@ -94,32 +187,47 @@ class HolidayBot(commands.Bot):
             return
 
         role_mention = f"<@&{role_id}>" if role_id else "@everyone"
-        replacements = {
-            "{date_name}": name,
-            "{date}": datetime.now().strftime("%d/%m/%Y"),
-            "{time}": datetime.now().strftime("%H:%M"),
-            "{role_mention}": role_mention,
-            "{everyone}": "@everyone",
-            "{here}": "@here",
-            "{guild}": guild.name,
-            "{user}": "Members",
-        }
+        
+        # Xử lý mention_user cho birthday
+        mention_user = ""
+        user_name_for_template = name.replace("Sinh nhật ", "") if "Sinh nhật " in name else "Members"
+        
+        if user_id and type_info == "Birthday":
+            mention_user = f"<@{user_id}>"
+            # Sử dụng template mặc định cho birthday với tag user
+            if "{mention_user}" not in template:
+                template = f"🎂 Chúc mừng Sinh nhật {{user}} {mention_user}! @everyone"
+        
+        # AI Wish Generation
+        wish_type = config.get('wish_type', 'Static')
+        if wish_type == 'AI':
+            # Language config will be added in next task, default to 'vi'
+            lang = config.get('language', 'vi') 
+            content = generate_wish(name, type_info, lang, user_name_for_template, mention_user)
+            # Append role_mention if not in content (AI might not include it)
+            if role_mention and role_mention not in content:
+                content += f"\n\n{role_mention}"
+        else:
+            # Static Template
+            replacements = {
+                "{date_name}": name,
+                "{date}": datetime.now().strftime("%d/%m/%Y"),
+                "{time}": datetime.now().strftime("%H:%M"),
+                "{role_mention}": role_mention,
+                "{everyone}": "@everyone",
+                "{here}": "@here",
+                "{guild}": guild.name,
+                "{user}": user_name_for_template,
+                "{mention_user}": mention_user,
+            }
 
-        content = template
-        for k, v in replacements.items():
-            content = content.replace(k, str(v))
+            content = template
+            for k, v in replacements.items():
+                content = content.replace(k, str(v))
 
         view = CelebrateView()
 
-        if interaction_ctx:
-            # Kiểm tra xem interaction đã được respond chưa
-            if interaction_ctx.response.is_done():
-                # Nếu đã respond, dùng followup
-                await interaction_ctx.followup.send(f"✅ Test sent to {channel.mention}", ephemeral=True)
-            else:
-                # Nếu chưa respond, dùng response
-                await interaction_ctx.response.send_message(f"✅ Test sent to {channel.mention}", ephemeral=True)
-
+        # Gửi tin nhắn (không gửi thông báo test nữa để giống thực tế)
         await channel.send(content, view=view)
 
     async def send_countdown(self, guild, name, days, interaction_ctx=None, user_name=None, age=None, template_type="tet"):
@@ -218,25 +326,25 @@ class HolidayBot(commands.Bot):
         date_str = now.strftime("%d/%m/%Y")
         
         # Lấy thông tin thời tiết cho tất cả vị trí
-        weather_messages = []
+        weather_lines = []
         for location in locations:
             weather_data = get_weather(location)
             if weather_data:
-                weather_messages.append(
-                    f"thời tiết {weather_data['description']}, "
-                    f"nhiệt độ tại {location} là {weather_data['temperature']}°C"
+                weather_lines.append(
+                    f"📍 **{location}**: {weather_data['description']}, {weather_data['temperature']}°C"
                 )
             else:
                 print(f"Không thể lấy thông tin thời tiết cho {location} (Guild: {guild.id})")
-                weather_messages.append(
-                    f"không thể lấy thông tin thời tiết cho {location}"
+                weather_lines.append(
+                    f"📍 **{location}**: không thể lấy thông tin"
                 )
         
-        # Tạo message với tất cả vị trí, sau đó mới tag role_mention
+        # Tạo message với format nhiều dòng dễ đọc
+        weather_content = "\n".join(weather_lines)
         message = (
-            f"Hôm nay là {weekday}, ngày {date_str}, "
-            + ", ".join(weather_messages) + ". "
-            + f"Chúc một ngày tốt lành! {role_mention}"
+            f"☀️ **Thông báo thời tiết - {weekday}, {date_str}**\n\n"
+            f"{weather_content}\n\n"
+            f"Chúc một ngày tốt lành! {role_mention}"
         )
         
         try:
@@ -275,7 +383,8 @@ class HolidayBot(commands.Bot):
 
         for bd in todays_bd:
             name = f"Sinh nhật {bd['user_name']}"
-            await self.send_wish(guild, name, "Birthday", interaction_ctx)
+            user_id = bd.get('user_id')
+            await self.send_wish(guild, name, "Birthday", interaction_ctx, user_id=user_id)
 
     async def check_countdowns(self, guild, holidays, birthdays):
         """Check and send countdown notifications."""
@@ -294,7 +403,13 @@ class HolidayBot(commands.Bot):
         if should_alert_tet:
             await self.send_tet_countdown_report(guild)
 
-        # Check Tet dates for 5-day countdown
+        # Custom countdown days (default: 5)
+        days_before = cd_config.get("days_before", [5])
+        # Allow single int for backward compatibility or direct edit
+        if isinstance(days_before, int):
+            days_before = [days_before]
+
+        # Check Tet dates for countdown
         tet_dates = [h for h in holidays if h['name'] in ["Tết Dương Lịch", "Tết Nguyên Đán"]]
         for t in tet_dates:
             if t['type'] == 'Solar':
@@ -302,17 +417,17 @@ class HolidayBot(commands.Bot):
             else:
                 days = get_days_until_lunar(t['date'])
 
-            if days == 5:
+            if days in days_before:
                 await self.send_countdown(guild, t['name'], days, template_type="tet")
 
-        # Birthday Countdown Logic (Fixed 5 days)
+        # Birthday Countdown Logic
         for bd in birthdays:
             if bd['type'] == 'Solar':
                 days = get_days_until_solar(bd['date'])
             else:
                 days = get_days_until_lunar(bd['date'])
 
-            if days == 5:
+            if days in days_before:
                 age = get_age(bd['date'], bd['type'])
                 if isinstance(age, int):
                     age += 1
@@ -320,30 +435,35 @@ class HolidayBot(commands.Bot):
 
     # ========== Background Task ==========
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=1)
     async def daily_check(self):
         """Daily background task to check holidays and birthdays."""
-        # Kiểm tra xem có phải 6h sáng giờ Việt Nam không
         vn_tz = pytz.timezone("Asia/Ho_Chi_Minh")
         now_vn = datetime.now(vn_tz)
         
-        # Chỉ chạy khi đúng 6h sáng VN
-        if now_vn.hour != 6 or now_vn.minute != 0:
-            return
-        
         today_solar = get_solar_date()
         today_lunar = get_lunar_date()
-
         holidays = load_json(HOLIDAYS_JSON)
         birthdays = load_json(BIRTHDAYS_JSON)
-
-        matched_events = []
-        for h in holidays:
-            if (h['type'] == 'Solar' and h['date'] == today_solar) or \
-               (h['type'] == 'Lunar' and h['date'] == today_lunar):
-                matched_events.append(h)
-
+        
+        # Kiểm tra từng guild theo thời gian cấu hình riêng
         for guild in self.guilds:
+            config = load_json(JSON_CONFIG).get(str(guild.id), {})
+            notif_time = config.get('notification_time', {})
+            target_hour = notif_time.get('hour', 6)
+            target_minute = notif_time.get('minute', 0)
+            
+            # Chỉ chạy khi đúng giờ đã cấu hình
+            if now_vn.hour != target_hour or now_vn.minute != target_minute:
+                continue
+            
+            # Lọc holidays phù hợp
+            matched_events = []
+            for h in holidays:
+                if (h['type'] == 'Solar' and h['date'] == today_solar) or \
+                   (h['type'] == 'Lunar' and h['date'] == today_lunar):
+                    matched_events.append(h)
+            
             await self.check_events_for_guild(guild, matched_events, birthdays, today_solar, today_lunar)
             await self.check_countdowns(guild, holidays, birthdays)
 
@@ -351,16 +471,20 @@ class HolidayBot(commands.Bot):
     async def before_daily_check(self):
         await self.wait_until_ready()
     
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=1)
     async def weather_notification_task(self):
-        """Task gửi thông báo thời tiết vào 6h sáng mỗi ngày theo giờ Việt Nam."""
-        # Kiểm tra xem có phải 6h sáng giờ Việt Nam không
+        """Task gửi thông báo thời tiết theo giờ cấu hình."""
         vn_tz = pytz.timezone("Asia/Ho_Chi_Minh")
         now_vn = datetime.now(vn_tz)
         
-        # Chỉ gửi khi đúng 6h sáng (chính xác 6:00 để tránh gửi trùng)
-        if now_vn.hour == 6 and now_vn.minute == 0:
-            for guild in self.guilds:
+        for guild in self.guilds:
+            config = load_json(JSON_CONFIG).get(str(guild.id), {})
+            notif_time = config.get('notification_time', {})
+            target_hour = notif_time.get('hour', 6)
+            target_minute = notif_time.get('minute', 0)
+            
+            # Chỉ gửi khi đúng giờ đã cấu hình
+            if now_vn.hour == target_hour and now_vn.minute == target_minute:
                 await self.send_weather_notification(guild)
     
     @weather_notification_task.before_loop
@@ -368,7 +492,7 @@ class HolidayBot(commands.Bot):
         await self.wait_until_ready()
     
     async def check_restart_status(self):
-        """Kiểm tra và gửi thông báo restart thành công."""
+        """Kiểm tra và gửi thông báo restart thành công vào log channel."""
         restart_info_file = "restart_info.json"
         
         if not os.path.exists(restart_info_file):
@@ -379,18 +503,11 @@ class HolidayBot(commands.Bot):
                 restart_info = json.load(f)
             
             guild_id = int(restart_info.get('guild_id'))
-            channel_id = restart_info.get('channel_id')
             user_name = restart_info.get('user_name', 'Unknown')
             
             guild = self.get_guild(guild_id)
             if not guild:
                 # Xóa file nếu không tìm thấy guild
-                os.remove(restart_info_file)
-                return
-            
-            channel = guild.get_channel(channel_id)
-            if not channel:
-                # Xóa file nếu không tìm thấy channel
                 os.remove(restart_info_file)
                 return
             
@@ -404,52 +521,52 @@ class HolidayBot(commands.Bot):
             except:
                 ping_success = False
             
+            restart_count = self.get_restart_count()
+            
             if ping_success:
                 # Ping thành công - bot đã khởi động xong
-                try:
-                    await channel.send(
-                        f"✅ **Bot đã khởi động lại thành công!**\n"
-                        f"🏓 Latency: {latency}ms\n"
-                        f"👤 Khởi động bởi: {user_name}\n"
-                        f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
-                    )
-                except Exception as e:
-                    print(f"Lỗi khi gửi thông báo restart thành công: {e}")
-                    # Fallback: try system channel
-                    if guild.system_channel:
-                        try:
-                            await guild.system_channel.send(
-                                f"✅ **Bot đã khởi động lại thành công!**\n"
-                                f"👤 Khởi động bởi: {user_name}\n"
-                                f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
-                            )
-                        except Exception as e2:
-                            print(f"Lỗi fallback system channel: {e2}")
+                message = (
+                    f"✅ **Bot đã khởi động lại thành công!**\n"
+                    f"🏓 Latency: {latency}ms\n"
+                    f"👤 Khởi động bởi: {user_name}\n"
+                    f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+                    f"📊 Lần khởi động thứ: {restart_count}"
+                )
             else:
                 # Ping không thành công - có thể có lỗi
-                try:
-                    await channel.send(
-                        f"⚠️ **Bot đã khởi động lại nhưng có thể có vấn đề!**\n"
-                        f"👤 Khởi động bởi: {user_name}\n"
-                        f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-                        f"❌ Không thể ping bot, vui lòng kiểm tra lại."
-                    )
-                except Exception as e:
-                    print(f"Lỗi khi gửi thông báo restart có vấn đề: {e}")
-                    # Fallback: try system channel
-                    if guild.system_channel:
-                        try:
-                            await guild.system_channel.send(
-                                f"⚠️ **Bot đã khởi động lại nhưng có thể có vấn đề!**\n"
-                                f"👤 Khởi động bởi: {user_name}\n"
-                                f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-                                f"❌ Không thể ping bot, vui lòng kiểm tra lại."
-                            )
-                        except Exception as e2:
-                            print(f"Lỗi fallback system channel: {e2}")
+                message = (
+                    f"⚠️ **Bot đã khởi động lại nhưng có thể có vấn đề!**\n"
+                    f"👤 Khởi động bởi: {user_name}\n"
+                    f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+                    f"📊 Lần khởi động thứ: {restart_count}\n"
+                    f"❌ Không thể ping bot, vui lòng kiểm tra lại."
+                )
+            
+            # Tạo file restart info với số lần
+            file_to_send = None
+            try:
+                new_filename = f"restart_info_file_{restart_count}.json"
+                with open(new_filename, 'w', encoding='utf-8') as f:
+                    json.dump(restart_info, f, indent=2, ensure_ascii=False)
+                file_to_send = new_filename
+            except Exception as e:
+                print(f"Lỗi khi tạo restart info file: {e}")
+            
+            # Gửi vào log channel kèm file
+            await self.send_log_message(guild, message, file_to_send)
             
             # Xóa file sau khi đã xử lý
-            os.remove(restart_info_file)
+            if os.path.exists(restart_info_file):
+                try:
+                    os.remove(restart_info_file)
+                except:
+                    pass
+            
+            if file_to_send and os.path.exists(file_to_send):
+                try:
+                    os.remove(file_to_send)
+                except:
+                    pass
             
         except Exception as e:
             print(f"Lỗi khi kiểm tra restart status: {e}")

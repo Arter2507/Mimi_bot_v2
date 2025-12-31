@@ -21,6 +21,11 @@
                 "Bac Lieu",
                 "Ca Mau"
             ]
+        },
+        "log_channel_id": 1343141643275993111,
+        "notification_time": {
+            "hour": 6,
+            "minute": 0
         }
     }
 }

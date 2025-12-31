@@ -53,23 +53,19 @@ class HolidaySelect(discord.ui.Select):
         
         if selected_value == "today":
             # Test với ngày hiện tại
-            await interaction.response.send_message(
-                "🔄 Đang gửi test wish cho ngày hiện tại...",
-                ephemeral=True
-            )
+            await interaction.response.defer(ephemeral=True)
             await self.bot.check_events_for_guild(
                 self.guild,
                 manual_trigger=True,
-                interaction_ctx=interaction
+                interaction_ctx=None  # Không gửi thông báo test
             )
+            await interaction.followup.send("✅ Đã gửi test wish cho ngày hiện tại!", ephemeral=True)
         else:
             # Test với holiday cụ thể
             holiday_name = selected_value
-            await interaction.response.send_message(
-                f"🔄 Đang gửi test wish cho: {holiday_name}...",
-                ephemeral=True
-            )
-            await self.bot.send_wish(self.guild, holiday_name, "Test", interaction)
+            await interaction.response.defer(ephemeral=True)
+            await self.bot.send_wish(self.guild, holiday_name, "Test", None)  # Không gửi thông báo test
+            await interaction.followup.send(f"✅ Đã gửi test wish cho: {holiday_name}!", ephemeral=True)
 
 
 class TestWishView(discord.ui.View):
@@ -158,13 +154,12 @@ class BirthdaySelect(discord.ui.Select):
             return
         
         user_name = user_bd.get('user_name', 'Unknown')
+        user_id = user_bd.get('user_id')
         name = f"Sinh nhật {user_name}"
         
-        await interaction.response.send_message(
-            f"🔄 Đang gửi test birthday cho {user_name}...",
-            ephemeral=True
-        )
-        await self.bot.send_wish(self.guild, name, "Birthday", interaction)
+        await interaction.response.defer(ephemeral=True)
+        await self.bot.send_wish(self.guild, name, "Birthday", None, user_id=user_id)  # Không gửi thông báo test
+        await interaction.followup.send(f"✅ Đã gửi test birthday cho {user_name}!", ephemeral=True)
 
 
 class TestBirthdayView(discord.ui.View):
@@ -246,10 +241,7 @@ class CountdownBirthdaySelect(discord.ui.Select):
         
         user_name = user_bd.get('user_name', 'Unknown')
         
-        await interaction.response.send_message(
-            f"🔄 Đang gửi test countdown birthday cho {user_name}...",
-            ephemeral=True
-        )
+        await interaction.response.defer(ephemeral=True)
         
         # Tính toán days và age
         if user_bd['type'] == 'Solar':
@@ -269,6 +261,7 @@ class CountdownBirthdaySelect(discord.ui.Select):
             age=age,
             template_type="birthday"
         )
+        await interaction.followup.send(f"✅ Đã gửi test countdown birthday cho {user_name}!", ephemeral=True)
 
 
 class TestCountdownBirthdayView(discord.ui.View):

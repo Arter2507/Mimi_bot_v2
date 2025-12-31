@@ -5,22 +5,7 @@ from discord import app_commands
 from core.json_store import load_json, save_json
 from core.constants import BIRTHDAYS_JSON
 from core.date_utils import validate_date, normalize_date
-
-async def birthday_autocomplete(
-    interaction: discord.Interaction,
-    current: str,
-) -> list[app_commands.Choice[str]]:
-    birthdays = load_json(BIRTHDAYS_JSON)
-    choices = []
-    for b in birthdays:
-        date = b.get('date', '')
-        user_name = b.get('user_name', 'Unknown')
-        label = f"{date} - {user_name}"
-        if current.lower() in label.lower():
-            choices.append(app_commands.Choice(name=label, value=date))
-        if len(choices) >= 25:  # Discord limit
-            break
-    return choices
+from views.birthday_manage_view import BirthdayRemoveView, BirthdayUpdateView
 
 
 class BirthdayCog(commands.Cog, name="Birthday"):
@@ -91,51 +76,23 @@ class BirthdayCog(commands.Cog, name="Birthday"):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @birthday_group.command(name="remove", description="Xóa sinh nhật theo ngày")
-    @app_commands.describe(date="Ngày sinh cần xóa (DD-MM-YYYY)")
-    @app_commands.autocomplete(date=birthday_autocomplete)
-    async def remove(self, interaction: discord.Interaction, date: str):
-        birthdays = load_json(BIRTHDAYS_JSON)
-        new_bd = [b for b in birthdays if b['date'] != date]
+    @birthday_group.command(name="remove", description="Xóa sinh nhật")
+    async def remove(self, interaction: discord.Interaction):
+        view = BirthdayRemoveView()
+        await interaction.response.send_message(
+            "Chọn sinh nhật cần xóa:",
+            view=view,
+            ephemeral=True
+        )
 
-        if len(birthdays) == len(new_bd):
-            await interaction.response.send_message(
-                "Không tìm thấy sinh nhật nào ngày này.",
-                ephemeral=True
-            )
-        else:
-            save_json(BIRTHDAYS_JSON, new_bd)
-            await interaction.response.send_message(
-                f"Đã xóa các sinh nhật ngày {date}.",
-                ephemeral=True
-            )
-
-    @birthday_group.command(name="update", description="Cập nhật user name cho sinh nhật")
-    @app_commands.describe(
-        date="Ngày sinh cần cập nhật (DD-MM-YYYY)",
-        new_name="Tên mới"
-    )
-    @app_commands.autocomplete(date=birthday_autocomplete)
-    async def update(self, interaction: discord.Interaction, date: str, new_name: str):
-        birthdays = load_json(BIRTHDAYS_JSON)
-        found = False
-
-        for b in birthdays:
-            if b['date'] == date:
-                b['user_name'] = new_name
-                found = True
-
-        if found:
-            save_json(BIRTHDAYS_JSON, birthdays)
-            await interaction.response.send_message(
-                f"Đã cập nhật sinh nhật ngày {date}.",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "Không tìm thấy.",
-                ephemeral=True
-            )
+    @birthday_group.command(name="update", description="Cập nhật sinh nhật (tên người và ngày)")
+    async def update(self, interaction: discord.Interaction):
+        view = BirthdayUpdateView()
+        await interaction.response.send_message(
+            "Chọn sinh nhật cần cập nhật:",
+            view=view,
+            ephemeral=True
+        )
 
 
 async def setup(bot):

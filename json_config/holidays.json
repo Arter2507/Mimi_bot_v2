@@ -1,1 +1,42 @@
-[]
+[
+    {
+        "date": "01-01",
+        "name": "Tết Dương Lịch",
+        "type": "Solar"
+    },
+    {
+        "date": "30-04",
+        "name": "Giải phóng miền Nam",
+        "type": "Solar"
+    },
+    {
+        "date": "01-05",
+        "name": "Quốc tế Lao động",
+        "type": "Solar"
+    },
+    {
+        "date": "02-09",
+        "name": "Quốc khánh Việt Nam",
+        "type": "Solar"
+    },
+    {
+        "date": "01-01",
+        "name": "Tết Nguyên Đán",
+        "type": "Lunar"
+    },
+    {
+        "date": "15-08",
+        "name": "Tết Trung Thu",
+        "type": "Lunar"
+    },
+    {
+        "date": "31-12",
+        "name": "ngày đồng âm",
+        "type": "Solar"
+    },
+    {
+        "date": "13-11",
+        "name": "test",
+        "type": "Solar"
+    }
+]

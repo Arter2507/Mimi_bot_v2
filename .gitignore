@@ -34,3 +34,8 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Local Config
+json_config/
+restart_info.json
+restart_count.json
