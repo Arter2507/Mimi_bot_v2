@@ -2,7 +2,7 @@ import discord
 
 class CelebrateView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # Persistent view, no timeout
         self.celebrated = {}
 
     @discord.ui.button(label="🎉 Ăn mừng ngay!", style=discord.ButtonStyle.green, custom_id="celebrate_button")
@@ -17,3 +17,7 @@ class CelebrateView(discord.ui.View):
         await interaction.response.send_message(
             f"{interaction.user.mention} đã tham gia ăn mừng!", ephemeral=False
         )
+
+    async def on_timeout(self):
+        # Cleanup when view times out
+        self.celebrated.clear()

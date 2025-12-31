@@ -311,8 +311,8 @@ class TestWeatherView(discord.ui.View):
             )
             return
         
-        location = weather_config.get("location")
-        if not location:
+        locations = weather_config.get("locations", [])
+        if not locations:
             await interaction.response.send_message(
                 "❌ Chưa cấu hình vị trí thời tiết.",
                 ephemeral=True
@@ -324,15 +324,9 @@ class TestWeatherView(discord.ui.View):
             ephemeral=True
         )
         
-        # Lấy thông tin thời tiết
-        weather_data = get_weather(location)
-        
-        if not weather_data:
-            await interaction.followup.send(
-                f"❌ Không thể lấy thông tin thời tiết cho {location}.",
-                ephemeral=True
-            )
-            return
+        # Lấy role_mention từ config chính
+        role_id = config.get('role_id')
+        role_mention = f"<@&{role_id}>" if role_id else "@everyone"
         
         # Tạo thông báo giống thông báo thật
         vn_tz = pytz.timezone("Asia/Ho_Chi_Minh")
@@ -344,11 +338,25 @@ class TestWeatherView(discord.ui.View):
         weekday = weekday_names[now.weekday()]
         date_str = now.strftime("%d/%m/%Y")
         
+        # Lấy thông tin thời tiết cho tất cả vị trí
+        weather_messages = []
+        for location in locations:
+            weather_data = get_weather(location)
+            if weather_data:
+                weather_messages.append(
+                    f"thời tiết {weather_data['description']}, "
+                    f"nhiệt độ tại {location} là {weather_data['temperature']}°C"
+                )
+            else:
+                weather_messages.append(
+                    f"không thể lấy thông tin thời tiết cho {location}"
+                )
+        
+        # Tạo message với tất cả vị trí, sau đó mới tag role_mention
         message = (
             f"Hôm nay là {weekday}, ngày {date_str}, "
-            f"thời tiết {weather_data['description']}, "
-            f"nhiệt độ tại {location} là {weather_data['temperature']}°C. "
-            f"Chúc một ngày tốt lành!"
+            + ", ".join(weather_messages) + ". "
+            + f"Chúc một ngày tốt lành! {role_mention}"
         )
         
         # Gửi thông báo test

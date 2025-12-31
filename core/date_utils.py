@@ -1,6 +1,48 @@
 from datetime import datetime, date as dt_date
 from lunardate import LunarDate
 
+def validate_date(date_str, date_type):
+    """Validate if the date string is a valid date for the given type."""
+    try:
+        parts = list(map(int, date_str.split('-')))
+        if len(parts) == 2:  # DD-MM
+            day, month = parts
+        elif len(parts) == 3:  # DD-MM-YYYY
+            day, month, year = parts
+        else:
+            return False
+        
+        if not (1 <= month <= 12 and 1 <= day <= 31):
+            return False
+        
+        # For solar, check if date is valid
+        if date_type == "Solar":
+            if len(parts) == 3:
+                dt_date(year, month, day)  # Will raise ValueError if invalid
+            else:
+                # For DD-MM, assume current year for validation
+                dt_date(datetime.now().year, month, day)
+        # For lunar, LunarDate handles validation internally, but we can try
+        elif date_type == "Lunar":
+            if len(parts) == 3:
+                LunarDate(year, month, day)
+            else:
+                LunarDate(datetime.now().year, month, day)
+        return True
+    except ValueError:
+        return False
+
+def normalize_date(date_str):
+    """Normalize date to DD-MM or DD-MM-YYYY format."""
+    parts = date_str.split('-')
+    if len(parts) == 2:
+        day, month = parts
+        return f"{int(day):02d}-{int(month):02d}"
+    elif len(parts) == 3:
+        day, month, year = parts
+        return f"{int(day):02d}-{int(month):02d}-{year}"
+    return date_str
+
 def get_solar_date():
     return datetime.now().strftime("%d-%m")
 

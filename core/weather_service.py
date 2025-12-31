@@ -2,12 +2,17 @@ import os
 import requests
 from typing import Optional, Dict
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 
 # OpenWeatherMap API key (có thể lấy miễn phí tại https://openweathermap.org/api)
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
 WEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
+
+# Cache cho weather data để tránh rate limit
+WEATHER_CACHE = {}
+CACHE_TTL = 600  # 10 minutes
 
 # Mapping thời tiết tiếng Việt
 WEATHER_DESCRIPTIONS = {
@@ -88,6 +93,17 @@ def get_weather(location: str) -> Optional[Dict]:
         print("WEATHER_API_KEY appears to be invalid (too short)")
         return None
     
+    # Check cache first
+    cache_key = location.lower().strip()
+    current_time = time.time()
+    if cache_key in WEATHER_CACHE:
+        cached_data, timestamp = WEATHER_CACHE[cache_key]
+        if current_time - timestamp < CACHE_TTL:
+            return cached_data
+        else:
+            # Cache expired, remove it
+            del WEATHER_CACHE[cache_key]
+    
     try:
         params = {
             "q": location,
@@ -109,7 +125,7 @@ def get_weather(location: str) -> Optional[Dict]:
             city_name = data["name"]
             country = data["sys"].get("country", "")
             
-            return {
+            result = {
                 "location": f"{city_name}, {country}",
                 "temperature": round(temp),
                 "feels_like": round(feels_like),
@@ -117,6 +133,11 @@ def get_weather(location: str) -> Optional[Dict]:
                 "humidity": humidity,
                 "main": weather_main
             }
+            
+            # Cache the result
+            WEATHER_CACHE[cache_key] = (result, current_time)
+            
+            return result
         elif response.status_code == 401:
             print(f"Weather API authentication failed for location '{location}' - check API key")
             return None
@@ -124,7 +145,11 @@ def get_weather(location: str) -> Optional[Dict]:
             print(f"Weather location '{location}' not found")
             return None
         elif response.status_code == 429:
-            print(f"Weather API rate limit exceeded for location '{location}'")
+            print(f"Weather API rate limit exceeded for location '{location}' - using cached data if available")
+            # If rate limited, try to return cached data even if expired
+            if cache_key in WEATHER_CACHE:
+                cached_data, _ = WEATHER_CACHE[cache_key]
+                return cached_data
             return None
         else:
             print(f"Weather API returned status {response.status_code} for location '{location}'")

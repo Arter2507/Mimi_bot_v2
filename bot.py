@@ -320,9 +320,17 @@ class HolidayBot(commands.Bot):
 
     # ========== Background Task ==========
 
-    @tasks.loop(time=DEFAULT_WISH_TIME)
+    @tasks.loop(hours=1)
     async def daily_check(self):
         """Daily background task to check holidays and birthdays."""
+        # Kiểm tra xem có phải 6h sáng giờ Việt Nam không
+        vn_tz = pytz.timezone("Asia/Ho_Chi_Minh")
+        now_vn = datetime.now(vn_tz)
+        
+        # Chỉ chạy khi đúng 6h sáng VN
+        if now_vn.hour != 6 or now_vn.minute != 0:
+            return
+        
         today_solar = get_solar_date()
         today_lunar = get_lunar_date()
 
@@ -398,20 +406,47 @@ class HolidayBot(commands.Bot):
             
             if ping_success:
                 # Ping thành công - bot đã khởi động xong
-                await channel.send(
-                    f"✅ **Bot đã khởi động lại thành công!**\n"
-                    f"🏓 Latency: {latency}ms\n"
-                    f"👤 Khởi động bởi: {user_name}\n"
-                    f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
-                )
+                try:
+                    await channel.send(
+                        f"✅ **Bot đã khởi động lại thành công!**\n"
+                        f"🏓 Latency: {latency}ms\n"
+                        f"👤 Khởi động bởi: {user_name}\n"
+                        f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+                    )
+                except Exception as e:
+                    print(f"Lỗi khi gửi thông báo restart thành công: {e}")
+                    # Fallback: try system channel
+                    if guild.system_channel:
+                        try:
+                            await guild.system_channel.send(
+                                f"✅ **Bot đã khởi động lại thành công!**\n"
+                                f"👤 Khởi động bởi: {user_name}\n"
+                                f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+                            )
+                        except Exception as e2:
+                            print(f"Lỗi fallback system channel: {e2}")
             else:
                 # Ping không thành công - có thể có lỗi
-                await channel.send(
-                    f"⚠️ **Bot đã khởi động lại nhưng có thể có vấn đề!**\n"
-                    f"👤 Khởi động bởi: {user_name}\n"
-                    f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-                    f"❌ Không thể ping bot, vui lòng kiểm tra lại."
-                )
+                try:
+                    await channel.send(
+                        f"⚠️ **Bot đã khởi động lại nhưng có thể có vấn đề!**\n"
+                        f"👤 Khởi động bởi: {user_name}\n"
+                        f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+                        f"❌ Không thể ping bot, vui lòng kiểm tra lại."
+                    )
+                except Exception as e:
+                    print(f"Lỗi khi gửi thông báo restart có vấn đề: {e}")
+                    # Fallback: try system channel
+                    if guild.system_channel:
+                        try:
+                            await guild.system_channel.send(
+                                f"⚠️ **Bot đã khởi động lại nhưng có thể có vấn đề!**\n"
+                                f"👤 Khởi động bởi: {user_name}\n"
+                                f"⏰ Thời gian: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+                                f"❌ Không thể ping bot, vui lòng kiểm tra lại."
+                            )
+                        except Exception as e2:
+                            print(f"Lỗi fallback system channel: {e2}")
             
             # Xóa file sau khi đã xử lý
             os.remove(restart_info_file)

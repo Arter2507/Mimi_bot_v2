@@ -4,6 +4,23 @@ from discord import app_commands
 
 from core.json_store import load_json, save_json
 from core.constants import BIRTHDAYS_JSON
+from core.date_utils import validate_date, normalize_date
+
+async def birthday_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    birthdays = load_json(BIRTHDAYS_JSON)
+    choices = []
+    for b in birthdays:
+        date = b.get('date', '')
+        user_name = b.get('user_name', 'Unknown')
+        label = f"{date} - {user_name}"
+        if current.lower() in label.lower():
+            choices.append(app_commands.Choice(name=label, value=date))
+        if len(choices) >= 25:  # Discord limit
+            break
+    return choices
 
 
 class BirthdayCog(commands.Cog, name="Birthday"):
@@ -33,16 +50,14 @@ class BirthdayCog(commands.Cog, name="Birthday"):
         date_type = type.value if type else "Solar"
 
         # Validate date format DD-MM-YYYY
-        try:
-            day, month, year = map(int, date.split('-'))
-            if not (1 <= month <= 12 and 1 <= day <= 31):
-                raise ValueError
-        except:
+        if not validate_date(date, date_type):
             await interaction.response.send_message(
-                "Định dạng ngày không hợp lệ. Dùng DD-MM-YYYY (VD: 01-01-1999).",
+                "Định dạng ngày không hợp lệ hoặc ngày không tồn tại. Dùng DD-MM-YYYY (VD: 01-01-1999).",
                 ephemeral=True
             )
             return
+
+        date = normalize_date(date)
 
         birthdays = load_json(BIRTHDAYS_JSON)
         birthdays.append({
@@ -78,6 +93,7 @@ class BirthdayCog(commands.Cog, name="Birthday"):
 
     @birthday_group.command(name="remove", description="Xóa sinh nhật theo ngày")
     @app_commands.describe(date="Ngày sinh cần xóa (DD-MM-YYYY)")
+    @app_commands.autocomplete(date=birthday_autocomplete)
     async def remove(self, interaction: discord.Interaction, date: str):
         birthdays = load_json(BIRTHDAYS_JSON)
         new_bd = [b for b in birthdays if b['date'] != date]
@@ -99,6 +115,7 @@ class BirthdayCog(commands.Cog, name="Birthday"):
         date="Ngày sinh cần cập nhật (DD-MM-YYYY)",
         new_name="Tên mới"
     )
+    @app_commands.autocomplete(date=birthday_autocomplete)
     async def update(self, interaction: discord.Interaction, date: str, new_name: str):
         birthdays = load_json(BIRTHDAYS_JSON)
         found = False

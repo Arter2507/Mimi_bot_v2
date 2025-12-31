@@ -4,6 +4,23 @@ from discord import app_commands
 
 from core.json_store import load_json, save_json
 from core.constants import HOLIDAYS_JSON
+from core.date_utils import validate_date, normalize_date
+
+async def holiday_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    holidays = load_json(HOLIDAYS_JSON)
+    choices = []
+    for h in holidays:
+        date = h.get('date', '')
+        name = h.get('name', 'Unknown')
+        label = f"{date} - {name}"
+        if current.lower() in label.lower():
+            choices.append(app_commands.Choice(name=label, value=date))
+        if len(choices) >= 25:  # Discord limit
+            break
+    return choices
 
 
 class HolidayCog(commands.Cog, name="Holiday"):
@@ -30,16 +47,14 @@ class HolidayCog(commands.Cog, name="Holiday"):
         type: app_commands.Choice[str]
     ):
         # Validate date format DD-MM
-        try:
-            day, month = map(int, date.split('-'))
-            if not (1 <= month <= 12 and 1 <= day <= 31):
-                raise ValueError
-        except:
+        if not validate_date(date, type.value):
             await interaction.response.send_message(
-                "Định dạng ngày không hợp lệ. Dùng DD-MM (VD: 01-01)",
+                "Định dạng ngày không hợp lệ hoặc ngày không tồn tại. Dùng DD-MM (VD: 01-01)",
                 ephemeral=True
             )
             return
+
+        date = normalize_date(date)
 
         holidays = load_json(HOLIDAYS_JSON)
 
@@ -61,6 +76,7 @@ class HolidayCog(commands.Cog, name="Holiday"):
 
     @holiday_group.command(name="remove", description="Xóa ngày lễ")
     @app_commands.describe(date="Ngày lễ cần xóa (DD-MM)")
+    @app_commands.autocomplete(date=holiday_autocomplete)
     async def remove(self, interaction: discord.Interaction, date: str):
         holidays = load_json(HOLIDAYS_JSON)
         new_holidays = [h for h in holidays if h['date'] != date]
@@ -101,6 +117,7 @@ class HolidayCog(commands.Cog, name="Holiday"):
         date="Ngày lễ cần cập nhật (DD-MM)",
         new_name="Tên mới"
     )
+    @app_commands.autocomplete(date=holiday_autocomplete)
     async def update(self, interaction: discord.Interaction, date: str, new_name: str):
         holidays = load_json(HOLIDAYS_JSON)
         found = False
