@@ -1,0 +1,26 @@
+{
+    "1340340230711939115": {
+        "role_id": "1343141642647113828",
+        "channel_id": "1343141643275993111",
+        "wish_type": "Static",
+        "content_template": "Chúc mừng {date_name}! {role_mention}"
+    },
+    "1343141642647113828": {
+        "role_id": "1343141642647113828",
+        "channel_id": "1343141643275993111",
+        "wish_type": "Static",
+        "content_template": "Chúc mừng {date_name}! {role_mention}",
+        "weather": {
+            "location": "Ho Chi Minh City",
+            "channel_id": 1343141643275993111,
+            "enabled": true,
+            "locations": [
+                "Hanoi",
+                "Ho Chi Minh City",
+                "Can Tho",
+                "Bac Lieu",
+                "Ca Mau"
+            ]
+        }
+    }
+}
